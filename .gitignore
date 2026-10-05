@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+.vscode/
+.idea/
+
+# base fictícia: é regenerada pelo build.py
+data/
+
+.DS_Store
+Thumbs.db
