@@ -1,0 +1,3 @@
+# só o radar de evasão precisa; o resto do projeto usa apenas a biblioteca padrão
+scikit-learn>=1.3
+numpy>=1.24

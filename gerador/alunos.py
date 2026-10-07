@@ -16,7 +16,12 @@ TOTAL_ALVO = {2016: 612, 2017: 628, 2018: 645, 2019: 661, 2020: 634, 2021: 659,
               2022: 694, 2023: 728, 2024: 757, 2025: 786, 2026: 808}
 RETENCAO = {2017: 0.87, 2018: 0.88, 2019: 0.88, 2020: 0.82, 2021: 0.86, 2022: 0.88,
             2023: 0.88, 2024: 0.87, 2025: 0.86, 2026: 0.85}
-P_EVASAO = 0.028
+# saídas no meio do ano: no histórico 2022-2025 o total de cada mês é fixo (mesmo perfil da escola real:
+# concentradas em janeiro/fevereiro e julho); nos outros anos a chance segue o mesmo perfil
+SAIDAS_MES_HIST = {1: 8, 2: 12, 3: 3, 4: 0, 5: 1, 6: 1, 7: 7, 8: 0, 9: 0, 10: 1, 11: 0, 12: 1}
+ANOS_HIST = (2022, 2023, 2024, 2025)
+PESO_MES_SAIDA = {m: q for m, q in SAIDAS_MES_HIST.items() if q}
+P_EVASAO = sum(SAIDAS_MES_HIST.values()) / len(ANOS_HIST) / 750   # ~1% ao ano
 DURACAO_REMATRICULA = 105
 VAGAS = {s[1]: s[3] for s in SERIES}
 TURNOS = {s[1]: s[4] for s in SERIES}
@@ -66,6 +71,12 @@ class Simulacao:
         self.alunos = []
         self.proximo_id = 10001
         self.leads_matriculados = {}
+        # cada saída do histórico ganha um ano sorteado, mantendo o total de cada mês
+        self.cotas = {ano: {} for ano in ANOS_HIST}
+        for m, q in SAIDAS_MES_HIST.items():
+            for _ in range(q):
+                c = self.cotas[rnd.choice(ANOS_HIST)]
+                c[m] = c.get(m, 0) + 1
         for l in leads:
             if l["matriculou"]:
                 self.leads_matriculados.setdefault(l["ano_letivo"], []).append(l)
@@ -179,13 +190,26 @@ class Simulacao:
     def evasao(self, ano):
         if ano > ANO:
             return
-        limite = min(date(ano, 11, 30), DATA_REF)
+        limite = min(date(ano, 12, 20), DATA_REF)
+        if ano in self.cotas:
+            for m, q in sorted(self.cotas[ano].items()):
+                for _ in range(q):
+                    d = date(ano, m, rnd.randint(1, 18 if m == 12 else 28))
+                    aptos = [a for a in self.alunos if (r := a["anos"].get(ano)) and r["status"] == "cursando"
+                             and r["data_matricula"] + timedelta(days=20) <= d]
+                    if aptos:
+                        r = rnd.choice(aptos)["anos"][ano]
+                        r["status"] = "evadido" if rnd.random() < 0.7 else "transferido"
+                        r["data_inativo"] = d
+            return
+        meses = {m: p for m, p in PESO_MES_SAIDA.items() if date(ano, m, 1) <= limite}
         for a in self.alunos:
             r = a["anos"].get(ano)
             if not r or rnd.random() >= P_EVASAO:
                 continue
-            ini = max(date(ano, 2, 15), r["data_matricula"] + timedelta(days=20))
-            d = data_entre(ini, limite)
+            # pico entre dezembro e fevereiro (fim do ano / desistência antes das aulas) e em julho (férias)
+            m = sortear(meses)
+            d = max(date(ano, m, rnd.randint(1, 18 if m == 12 else 28)), r["data_matricula"] + timedelta(days=20))
             if d <= limite:
                 r["status"] = "evadido" if rnd.random() < 0.7 else "transferido"
                 r["data_inativo"] = d

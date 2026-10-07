@@ -6,7 +6,8 @@ const f1 = v => Math.round(v * 10) / 10;
 function teto(v) {
   if (v <= 0) return 1;
   const p = Math.pow(10, Math.floor(Math.log10(v))), n = v / p;
-  return (n <= 1 ? 1 : n <= 1.5 ? 1.5 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * p;
+  // na faixa de 1 a 10 (contagens pequenas) passo de 2,5 vira 5: "2,5 alunos" não existe
+  return (n <= 1 ? 1 : n <= 1.5 ? (p === 1 ? 2 : 1.5) : n <= 2 ? 2 : n <= 2.5 ? (p === 1 ? 5 : 2.5) : n <= 5 ? 5 : 10) * p;
 }
 
 // limites do eixo com números redondos
@@ -18,12 +19,16 @@ function eixo(max, min = 0, divisoes = 5) {
   return {min: lo, max: hi, passo};
 }
 
+// id único por gráfico: se o mesmo id existisse num gráfico de aba escondida (display:none),
+// o navegador não desenharia a hachura nos outros
+let seqHach = 0, pfxHach = 'h0_';
 function hachuras(cores) {
+  pfxHach = `h${++seqHach}_`;
   return '<defs>' + [...new Set(cores)].map(c =>
-    `<pattern id="h${c.slice(1)}" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">` +
+    `<pattern id="${pfxHach}${c.slice(1)}" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">` +
     `<rect width="7" height="7" fill="${c}" opacity=".16"/><rect width="2.6" height="7" fill="${c}"/></pattern>`).join('') + '</defs>';
 }
-const preenchimento = (cor, hachurado) => hachurado ? `url(#h${cor.slice(1)})` : cor;
+const preenchimento = (cor, hachurado) => hachurado ? `url(#${pfxHach}${cor.slice(1)})` : cor;
 
 function grade(e, y, x1, x2, fmt, padL) {
   let s = '';
@@ -88,7 +93,7 @@ function grafBarras({rotulos, series, empilhado = false, W = LG.cheio, h = 300, 
                      hachurar, valores = false, total = false, linhas = [], fmtEixoDir, rotuloTip, padL = 64, padR, padT = 22, padB = 34, cada}) {
   const temDir = linhas.some(l => l.dir);
   padR = padR ?? (temDir ? 58 : 10);
-  fmtEixo = fmtEixo || (Math.max(...series.flatMap(s => s.valores)) >= 1e4 ? eixoMil : num);
+  fmtEixo = fmtEixo || (Math.max(...series.flatMap(s => s.valores)) >= 1e4 ? eixoMil : v => num(v, v % 1 ? 1 : 0));
   const n = rotulos.length, iw = W - padL - padR, ih = h - padT - padB;
   const somaPilha = i => soma(series, s => Math.max(0, s.valores[i] || 0));
   const maxEsq = Math.max(1, ...(empilhado ? rotulos.map((_, i) => somaPilha(i)) : series.flatMap(s => s.valores)),
@@ -233,7 +238,35 @@ function divergente(v, max = 1) {
   return `<div class="div-t"><div class="div-c"></div><div class="div-f ${v > 0 ? 'pos' : 'neg'}" style="${v > 0 ? 'left:50%' : `left:${50 - w}%`};width:${w}%"></div></div>`;
 }
 
-const ETAPAS_FUNIL = ['Leads', 'Conversas iniciadas', 'Visitas agendadas', 'Visitas realizadas', 'Matrículas'];
+// eixo X numérico: dispersão (presença x nota), curva ROC, calibração. Pontos com data-id são clicáveis.
+function grafDispersao({pontos = [], linhas = [], W = LG.cheio, h = 340, xMin = 0, xMax, yMin = 0, yMax, fmtX = num, fmtY = num,
+                        cortesX = [], cortesY = [], rotX = '', rotY = '', raio = 4, padL = 54, padR = 16, padT = 16, padB = 46}) {
+  const iw = W - padL - padR, ih = h - padT - padB;
+  const xs = pontos.map(p => p.x).concat(linhas.flatMap(l => l.pontos.map(p => p[0])));
+  const ys = pontos.map(p => p.y).concat(linhas.flatMap(l => l.pontos.map(p => p[1])));
+  const ex = eixo(xMax ?? Math.max(...xs, 1), xMin), ey = eixo(yMax ?? Math.max(...ys, 1), yMin);
+  const x = v => padL + iw * (v - ex.min) / (ex.max - ex.min);
+  const y = v => padT + ih - ih * (v - ey.min) / (ey.max - ey.min);
+  let s = `<svg class="graf" viewBox="0 0 ${W} ${h}" role="img">` + grade(ey, y, padL, W - padR, fmtY, padL);
+  for (let v = ex.min; v <= ex.max + ex.passo / 1000; v += ex.passo)
+    s += `<text class="rot" x="${f1(x(v))}" y="${padT + ih + 18}" text-anchor="middle">${fmtX(v)}</text>`;
+  if (rotX) s += `<text x="${f1(padL + iw / 2)}" y="${h - 4}" text-anchor="middle">${rotX}</text>`;
+  if (rotY) s += `<text x="12" y="${f1(padT + ih / 2)}" text-anchor="middle" transform="rotate(-90 12 ${f1(padT + ih / 2)})">${rotY}</text>`;
+  cortesX.forEach(c => { s += `<line class="corte" x1="${f1(x(c.v))}" x2="${f1(x(c.v))}" y1="${padT}" y2="${padT + ih}"/><text class="corte-t" x="${f1(x(c.v) + 5)}" y="${padT + 11}">${c.rot}</text>`; });
+  cortesY.forEach(c => { s += `<line class="corte" x1="${padL}" x2="${W - padR}" y1="${f1(y(c.v))}" y2="${f1(y(c.v))}"/><text class="corte-t" x="${W - padR - 4}" y="${f1(y(c.v) - 5)}" text-anchor="end">${c.rot}</text>`; });
+  linhas.forEach(l => {
+    const d = l.pontos.map((p, i) => (i ? 'L' : 'M') + f1(x(p[0])) + ' ' + f1(y(p[1]))).join('');
+    s += `<path d="${d}" fill="none" stroke="${l.cor}" stroke-width="${l.espessura || 2.4}" ${l.tracejado ? 'stroke-dasharray="6 5"' : ''} stroke-linejoin="round"/>`;
+    if (l.marcar) l.pontos.forEach(p => { s += `<circle cx="${f1(x(p[0]))}" cy="${f1(y(p[1]))}" r="4" fill="${l.cor}" ${p[2] ? `data-tip="${esc(p[2])}"` : ''}/>`; });
+  });
+  pontos.forEach(p => {
+    s += `<circle class="pt" cx="${f1(x(p.x))}" cy="${f1(y(p.y))}" r="${p.r || raio}" fill="${p.vazado ? 'none' : p.cor}" fill-opacity=".72" stroke="${p.cor}"${p.vazado ? ' stroke-width="2"' : ''}` +
+      `${p.tip ? ` data-tip="${esc(p.tip)}"` : ''}${p.id != null ? ` data-aluno="${p.id}"` : ''}/>`;
+  });
+  return s + '</svg>';
+}
+
+const ETAPAS_FUNIL =['Leads', 'Conversas iniciadas', 'Visitas agendadas', 'Visitas realizadas', 'Matrículas'];
 const CORES_FUNIL = [['#0ea5e9', '#e0f2fe', '#0369a1'], ['#14b8a6', '#ccfbf1', '#0f766e'], ['#8b5cf6', '#ede9fe', '#6d28d9'], ['#ea580c', '#ffedd5', '#c2410c'], ['#16a34a', '#dcfce7', '#15803d']];
 
 // funil em trapézios (cada faixa termina na largura de onde começa a próxima)

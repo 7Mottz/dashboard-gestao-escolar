@@ -11,6 +11,7 @@ from gerador.alunos import gerar_alunos, inicio_campanha
 from gerador.comum import ANO, ANO_PROX, DATA_REF, ESCOLA, REAJUSTE_ANUAL, SEDE, SERIES
 from gerador.financeiro import CONTRATURNO, TAXA_PLATAFORMA, gerar_financeiro
 from gerador.funil import gerar_leads
+from gerador.pedagogico import gerar_pedagogico
 
 SAIDA = Path(__file__).parent / "data"
 
@@ -29,6 +30,7 @@ def main():
     salvar("leads.json", leads)
     salvar("alunos.json", alunos)
     salvar("financeiro.json", gerar_financeiro(alunos))
+    salvar("pedagogico.json", gerar_pedagogico(alunos))   # gerador aleatório próprio: não altera os arquivos acima
 
     ativos = sum(1 for a in alunos if str(ANO) in a["anos"] and a["anos"][str(ANO)]["status"] == "cursando")
     salvar("meta.json", {
